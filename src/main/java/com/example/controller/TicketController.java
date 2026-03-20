@@ -1,7 +1,8 @@
-// TicketController.java - 更新初始化接口
 package com.example.controller;
 
-import com.example.entity.TrainTicketStock;
+import com.example.dto.StationOptionDTO;
+import com.example.dto.TicketAvailabilityDTO;
+import com.example.mapper.TrainStationMapper;
 import com.example.service.OptimizedRedisTicketService;
 import com.example.service.RestTicketService;
 import com.example.service.TrainTicketManager;
@@ -10,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Slf4j
@@ -26,22 +28,38 @@ public class TicketController {
     @Autowired
     private TrainTicketManager trainTicketManager;
 
+    @Autowired
+    private TrainStationMapper trainStationMapper;
+
     @GetMapping("/query")
-    public ResponseEntity<List<TrainTicketStock>> query(
+    public ResponseEntity<List<TicketAvailabilityDTO>> query(
+            @RequestParam String departureDate,
             @RequestParam Integer fromStationId,
             @RequestParam Integer toStationId) {
 
-        if (fromStationId == null || toStationId == null) {
+        if (fromStationId == null || toStationId == null || departureDate == null || departureDate.trim().isEmpty()) {
             return ResponseEntity.badRequest().build();
         }
 
-        List<TrainTicketStock> results = ticketService.queryTicketStock(fromStationId, toStationId);
+        try {
+            LocalDate.parse(departureDate);
+        } catch (Exception ex) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        List<TicketAvailabilityDTO> results = ticketService.queryTicketStock(departureDate, fromStationId, toStationId);
 
         if (results.isEmpty()) {
             return ResponseEntity.noContent().build();
         }
 
         return ResponseEntity.ok(results);
+    }
+
+    @GetMapping("/stations")
+    public ResponseEntity<List<StationOptionDTO>> stations() {
+        List<StationOptionDTO> stations = trainStationMapper.selectStationOptions();
+        return ResponseEntity.ok(stations);
     }
 
     @PostMapping("/book")
@@ -56,16 +74,12 @@ public class TicketController {
 
         if (success != null) {
             log.info("success");
-            return ResponseEntity.ok("抢票成功，订单已生成");
+            return ResponseEntity.ok("抢票成功，订单已生成，订单号:" + success);
         } else {
             return ResponseEntity.ok().body("抢票失败，无可用座位");
         }
     }
 
-    /**
-     * 初始化单个车次的指定座位类型
-     * POST /api/v1/tickets/initialize?trainId=1001&seatType=1
-     */
     @PostMapping("/initialize")
     public ResponseEntity<String> initialize(
             @RequestParam Long trainId,
@@ -86,10 +100,6 @@ public class TicketController {
         }
     }
 
-    /**
-     * 批量初始化车次
-     * POST /api/v1/tickets/initialize/batch?startTrainId=1001&endTrainId=1010
-     */
     @PostMapping("/initialize/batch")
     public ResponseEntity<String> initializeBatch(
             @RequestParam Long startTrainId,
@@ -105,10 +115,6 @@ public class TicketController {
         }
     }
 
-    /**
-     * 查询剩余配额
-     * GET /api/v1/tickets/quota?trainId=1001
-     */
     @GetMapping("/quota")
     public ResponseEntity<Long> getQuota(@RequestParam Long trainId) {
         long remaining = trainTicketManager.getRemainingQuota(trainId, 2000);
