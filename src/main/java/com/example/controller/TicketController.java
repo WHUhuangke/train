@@ -14,23 +14,35 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDate;
 import java.util.List;
 
+/**
+ * 票务 HTTP 控制器。
+ *
+ * <p>对外暴露查询、抢票、缓存初始化等接口，负责参数校验与返回值封装。</p>
+ */
 @Slf4j
 @RestController
 @RequestMapping("/api/v1/tickets")
 public class TicketController {
 
+    /** 余票查询服务。 */
     @Autowired
     private RestTicketService ticketService;
 
+    /** 抢票核心服务（支持长区间优先 + 余票缓存预扣减）。 */
     @Autowired
     private OptimizedRedisTicketService t;
 
+    /** 车次初始化管理服务。 */
     @Autowired
     private TrainTicketManager trainTicketManager;
 
+    /** 车站查询 Mapper。 */
     @Autowired
     private TrainStationMapper trainStationMapper;
 
+    /**
+     * 查询指定日期与区间的余票。
+     */
     @GetMapping("/query")
     public ResponseEntity<List<TicketAvailabilityDTO>> query(
             @RequestParam String departureDate,
@@ -56,12 +68,18 @@ public class TicketController {
         return ResponseEntity.ok(results);
     }
 
+    /**
+     * 获取可选站点列表。
+     */
     @GetMapping("/stations")
     public ResponseEntity<List<StationOptionDTO>> stations() {
         List<StationOptionDTO> stations = trainStationMapper.selectStationOptions();
         return ResponseEntity.ok(stations);
     }
 
+    /**
+     * 抢票接口：成功返回订单号，失败返回友好文案。
+     */
     @PostMapping("/book")
     public ResponseEntity<String> book(
             @RequestParam Long userId,
@@ -73,13 +91,16 @@ public class TicketController {
         String success = t.bookTicket(userId, trainId, fromIndex, toIndex, seatType);
 
         if (success != null) {
-            log.info("success");
+            log.info("抢票成功, orderId={}", success);
             return ResponseEntity.ok("抢票成功，订单已生成，订单号:" + success);
         } else {
             return ResponseEntity.ok().body("抢票失败，无可用座位");
         }
     }
 
+    /**
+     * 初始化指定车次缓存（支持指定座位类型）。
+     */
     @PostMapping("/initialize")
     public ResponseEntity<String> initialize(
             @RequestParam Long trainId,
@@ -100,6 +121,9 @@ public class TicketController {
         }
     }
 
+    /**
+     * 批量初始化车次缓存。
+     */
     @PostMapping("/initialize/batch")
     public ResponseEntity<String> initializeBatch(
             @RequestParam Long startTrainId,
@@ -115,6 +139,9 @@ public class TicketController {
         }
     }
 
+    /**
+     * 查询剩余配额。
+     */
     @GetMapping("/quota")
     public ResponseEntity<Long> getQuota(@RequestParam Long trainId) {
         long remaining = trainTicketManager.getRemainingQuota(trainId, 2000);
