@@ -1,0 +1,65 @@
+-- ---------------------------------------------------------
+-- 修正版：基于 [start, end-1] 区间的位图对账
+-- ---------------------------------------------------------
+
+WITH OrderMapping AS (
+    -- 第一步：将每个订单转化为标准的 9 位二进制区间字符串
+    -- 例如 from=0, to=3 -> 111000000
+    -- 例如 from=2, to=4 -> 001100000
+    SELECT
+        seat_id,
+        status,
+        from_station_index,
+        to_station_index,
+        -- 构造二进制数值：先生成 len 个 1，再左移到对应起点，最后取反向
+        -- 逻辑：( (1 << (to-from)) - 1 ) << (9 - to)
+        -- 但为了直观，我们用字符串构造法：
+        CONCAT(
+            REPEAT('0', from_station_index),
+            REPEAT('1', to_station_index - from_station_index),
+            REPEAT('0', 9 - to_station_index)
+        ) AS order_bitmap_bin
+    FROM t_order
+    WHERE status = 0
+),
+SeatAudit AS (
+    SELECT
+        ts.id AS seat_id,
+        ts.train_id,
+        ts.seat_bitmap AS physical_bitmap,
+        COUNT(om.seat_id) AS order_count,
+        -- 将所有订单字符串转为数值进行 BIT_OR 聚合
+        BIT_OR(CONV(om.order_bitmap_bin, 2, 10)) AS combined_val,
+        -- 校验交集
+        IF(SUM(BIT_COUNT(CONV(om.order_bitmap_bin, 2, 10))) >
+           BIT_COUNT(BIT_OR(CONV(om.order_bitmap_bin, 2, 10))), 1, 0) AS has_overlap
+    FROM t_train_seat ts
+    LEFT JOIN OrderMapping om ON ts.id = om.seat_id
+    GROUP BY ts.id, ts.train_id, ts.seat_bitmap
+)
+SELECT
+    seat_id,
+    train_id,
+    physical_bitmap AS '实际位图',
+    LPAD(BIN(combined_val), 9, '0') AS '订单聚合预期',
+    CASE
+        WHEN order_count = 0 AND physical_bitmap != '000000000' THEN '异常：无单占座'
+        WHEN has_overlap = 1 THEN '异常：订单区间重叠'
+        WHEN order_count > 0 AND physical_bitmap != LPAD(BIN(combined_val), 9, '0') THEN '异常：位图不一致'
+        ELSE '正常'
+    END AS audit_result
+FROM SeatAudit
+WHERE
+    (order_count = 0 AND physical_bitmap != '000000000') OR
+    (has_overlap = 1) OR
+    (order_count > 0 AND physical_bitmap != LPAD(BIN(combined_val), 9, '0'));
+
+-- 查询异常的库存余票记录
+SELECT s.train_id, s.seat_type, s.from_index, s.to_index, s.stock as '库存表数值',
+    (SELECT COUNT(*) FROM t_train_seat ts
+     WHERE ts.train_id = s.train_id AND ts.seat_type = s.seat_type
+       AND (CONV(ts.seat_bitmap, 2, 10) &
+            CONV(CONCAT(REPEAT('0', s.from_index), REPEAT('1', s.to_index - s.from_index), REPEAT('0', 9 - s.to_index)), 2, 10)) = 0
+    ) AS '位图实际可用数'
+FROM t_train_ticket_stock s
+HAVING `库存表数值` != `位图实际可用数`;

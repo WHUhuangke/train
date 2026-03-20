@@ -1,0 +1,168 @@
+### 1. 正常查询：从 1 号站到 5 号站
+# @name 正常查询
+GET http://localhost:8080/api/v1/tickets/query?fromStationId=1&toStationId=5
+Accept: application/json
+
+### 2. 参数缺失测试：缺少 toStationId (应返回 400 Bad Request)
+# @name 缺失参数测试
+GET http://localhost:8080/api/v1/tickets/query?fromStationId=1
+Accept: application/json
+
+### 3. 空结果测试：查询一个数据库里没有的区间 (应返回 204 No Content)
+# @name 无结果测试
+GET http://localhost:8080/api/v1/tickets/query?fromStationId=999&toStationId=888
+Accept: application/json
+
+### 4. 复杂区间测试：例如从 2 号站到 10 号站
+# @name 跨度查询
+GET http://localhost:8080/api/v1/tickets/query?fromStationId=1&toStationId=3
+Accept: application/json
+
+###############################################
+# 初始化相关测试
+###############################################
+
+### 5. 初始化单个车次的指定座位类型
+# @name 初始化单个车次单个座位类型
+POST http://localhost:8080/api/v1/tickets/initialize?trainId=1100&seatType=1
+Accept: application/json
+
+### 6. 初始化单个车次的所有座位类型
+# @name 初始化单个车次所有座位类型
+POST http://localhost:8080/api/v1/tickets/initialize?trainId=1001
+Accept: application/json
+
+### 7. 批量初始化车次（1001-1010）
+# @name 批量初始化
+POST http://localhost:8080/api/v1/tickets/initialize/batch?startTrainId=1001&endTrainId=1100
+Accept: application/json
+
+### 8. 查询车次剩余配额
+# @name 查询配额
+GET http://localhost:8080/api/v1/tickets/quota?trainId=1100
+Accept: application/json
+
+###############################################
+# 抢票相关测试
+###############################################
+
+### 9. 正常抢票请求（二等座）
+# @name 正常抢票
+POST http://localhost:8080/api/v1/tickets/book
+Content-Type: application/x-www-form-urlencoded
+
+userId=8888&trainId=1100&fromIndex=1&toIndex=3&seatType=2
+
+### 10. 正常抢票请求（一等座）
+# @name 抢票一等座
+POST http://localhost:8080/api/v1/tickets/book
+Content-Type: application/x-www-form-urlencoded
+
+userId=8889&trainId=1001&fromIndex=0&toIndex=1&seatType=1
+
+### 11. 跨站抢票（长途）
+# @name 跨站抢票
+POST http://localhost:8080/api/v1/tickets/book
+Content-Type: application/x-www-form-urlencoded
+
+userId=8890&trainId=1001&fromIndex=0&toIndex=9&seatType=2
+
+### 12. 短途抢票
+# @name 短途抢票
+POST http://localhost:8080/api/v1/tickets/book
+Content-Type: application/x-www-form-urlencoded
+
+userId=8891&trainId=1003&fromIndex=3&toIndex=4&seatType=2
+
+### 13. 不同车次抢票
+# @name 不同车次
+POST http://localhost:8080/api/v1/tickets/book
+Content-Type: application/x-www-form-urlencoded
+
+userId=8892&trainId=1002&fromIndex=1&toIndex=5&seatType=2
+
+###############################################
+# 并发和限流测试（需要压测工具配合）
+###############################################
+
+### 14. 模拟高并发抢票（需要多次快速执行）
+# @name 并发抢票1
+POST http://localhost:8080/api/v1/tickets/book
+Content-Type: application/x-www-form-urlencoded
+
+userId=9001&trainId=1001&fromIndex=1&toIndex=3&seatType=2
+
+### 15. 并发抢票2
+# @name 并发抢票2
+POST http://localhost:8080/api/v1/tickets/book
+Content-Type: application/x-www-form-urlencoded
+
+userId=9002&trainId=1001&fromIndex=1&toIndex=3&seatType=2
+
+### 16. 并发抢票3
+# @name 并发抢票3
+POST http://localhost:8080/api/v1/tickets/book
+Content-Type: application/x-www-form-urlencoded
+
+userId=9003&trainId=1001&fromIndex=1&toIndex=3&seatType=2
+
+###############################################
+# 边界条件测试
+###############################################
+
+### 17. 起点终点相同（应该失败或返回错误）
+# @name 起点终点相同
+POST http://localhost:8080/api/v1/tickets/book
+Content-Type: application/x-www-form-urlencoded
+
+userId=8893&trainId=1001&fromIndex=2&toIndex=2&seatType=2
+
+### 18. 终点小于起点（应该失败）
+# @name 终点小于起点
+POST http://localhost:8080/api/v1/tickets/book
+Content-Type: application/x-www-form-urlencoded
+
+userId=8894&trainId=1001&fromIndex=5&toIndex=2&seatType=2
+
+### 19. 不存在的车次
+# @name 不存在的车次
+POST http://localhost:8080/api/v1/tickets/book
+Content-Type: application/x-www-form-urlencoded
+
+userId=8895&trainId=9999&fromIndex=1&toIndex=3&seatType=2
+
+### 20. 不存在的座位类型
+# @name 不存在的座位类型
+POST http://localhost:8080/api/v1/tickets/book
+Content-Type: application/x-www-form-urlencoded
+
+userId=8896&trainId=1001&fromIndex=1&toIndex=3&seatType=9
+
+###############################################
+# 完整流程测试
+###############################################
+
+### 21. 完整流程：初始化 -> 查询 -> 抢票 -> 查询配额
+# Step 1: 初始化车次1003
+POST http://localhost:8080/api/v1/tickets/initialize?trainId=1003
+Accept: application/json
+
+###
+
+# Step 2: 查询库存
+GET http://localhost:8080/api/v1/tickets/query?fromStationId=1&toStationId=5
+Accept: application/json
+
+###
+
+# Step 3: 抢票
+POST http://localhost:8080/api/v1/tickets/book
+Content-Type: application/x-www-form-urlencoded
+
+userId=7777&trainId=1001&fromIndex=0&toIndex=4&seatType=1
+
+###
+
+# Step 4: 查询剩余配额
+GET http://localhost:8080/api/v1/tickets/quota?trainId=1003
+Accept: application/json

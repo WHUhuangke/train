@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  # MySQL: 端口 13306
+  mysql:
+    image: mysql:8.0
+    container_name: mysql-train
+    environment:
+      MYSQL_ROOT_PASSWORD: "123456"
+      MYSQL_DATABASE: "train_platform"
+    ports:
+      - "13306:3306"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --max_connections=2000
+    networks:
+      - train-net
+
+  # phpMyAdmin: 数据库 Web 管理界面
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: phpmyadmin-train
+    environment:
+      # 告诉 phpMyAdmin 连接哪个数据库服务器（使用容器名）
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_USER: root
+      PMA_PASSWORD: "123456"
+    ports:
+      - "8081:80" # 访问地址 http://localhost:8081
+    networks:
+      - train-net
+
+  # Redis: 端口 16379
+  redis:
+    image: redis:7.0
+    container_name: redis-train
+    ports:
+      - "16379:6379"
+    networks:
+      - train-net
+
+  # RabbitMQ: 账号 admin
+  rabbitmq:
+    image: rabbitmq:3.11-management
+    container_name: rabbitmq-train
+    environment:
+      RABBITMQ_DEFAULT_USER: "admin"
+      RABBITMQ_DEFAULT_PASS: "admin"
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - train-net
+
+networks:
+  train-net:
+    driver: bridge
