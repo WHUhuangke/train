@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 @Component
@@ -74,7 +75,11 @@ public class StockConsumer {
             }
 
             stockMapper.decreaseAffectedStocks(trainId, sellStart, sellEnd, startIndex, endIndex, seatType);
-            redisTemplate.delete("stock:" + trainId + ":" + seatType + ":*");
+            String pattern = "ticket:stock:*:" + trainId + ":" + seatType + ":*";
+            Set<String> cacheKeys = redisTemplate.keys(pattern);
+            if (cacheKeys != null && !cacheKeys.isEmpty()) {
+                redisTemplate.delete(cacheKeys);
+            }
             messageLogMapper.updateStatus(messageId, 2);
 
             channel.basicAck(deliveryTag, false);

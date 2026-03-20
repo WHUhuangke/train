@@ -9,14 +9,14 @@ import com.example.entity.TrainTicketStock;
 @Mapper
 public interface TrainTicketStockMapper {
     /**
-     * 3. 查询固定区间的所有可能车票 (A站到B站)
+     * 查询固定区间的所有车次余票（含一等/二等）
      */
     @Select("SELECT * FROM t_train_ticket_stock " +
-            "WHERE from_station_id = #{fId} AND to_station_id = #{tId} AND stock > 0")
+            "WHERE from_station_id = #{fId} AND to_station_id = #{tId}")
     List<TrainTicketStock> selectStocksByRoute(@Param("fId") Integer fromStationId, @Param("tId") Integer toStationId);
 
     /**
-     * 6. 扣减次数 (联动扣减所有受影响区间)
+     * 扣减次数 (联动扣减所有受影响区间)
      * 算法要求：from >= startIndex && to <= endIndex && 与 [sellStart, sellEnd] 有交集
      * 交集判定：NOT (record.to_index <= sellStart OR record.from_index >= sellEnd)
      */
@@ -27,10 +27,11 @@ public interface TrainTicketStockMapper {
             "AND NOT (to_index <= #{sellStart} OR from_index >= #{sellEnd}) " +
             "AND stock > 0 " +
             "AND seat_type = #{seatType}"
-        )
+    )
     int decreaseAffectedStocks(@Param("trainId") Long trainId,
                                @Param("sellStart") int sellStart,
                                @Param("sellEnd") int sellEnd,
                                @Param("startIndex") int startIndex,
-                               @Param("endIndex") int endIndex, Integer seatType);
+                               @Param("endIndex") int endIndex,
+                               @Param("seatType") Integer seatType);
 }

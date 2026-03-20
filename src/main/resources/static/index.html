@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>车票查询与选座</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; }
+    .row { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; }
+    select, input, button { padding: 6px 10px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+    th { background: #f4f4f4; }
+    .status { margin-top: 12px; color: #444; }
+  </style>
+</head>
+<body>
+<h2>车票查询与选座</h2>
+
+<div class="row">
+  <label>出发日期</label>
+  <input type="date" id="departureDate" />
+
+  <label>出发站</label>
+  <select id="fromStation"></select>
+
+  <label>到达站</label>
+  <select id="toStation"></select>
+
+  <button id="queryBtn">查询车次</button>
+</div>
+
+<table id="resultTable">
+  <thead>
+  <tr>
+    <th>车次ID</th>
+    <th>出发站</th>
+    <th>到达站</th>
+    <th>一等座余票</th>
+    <th>二等座余票</th>
+    <th>操作</th>
+  </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<div class="status" id="status"></div>
+
+<script>
+  const departureDateInput = document.getElementById('departureDate');
+  const fromSelect = document.getElementById('fromStation');
+  const toSelect = document.getElementById('toStation');
+  const statusEl = document.getElementById('status');
+  const tbody = document.querySelector('#resultTable tbody');
+
+  departureDateInput.value = new Date().toISOString().slice(0, 10);
+
+  async function loadStations() {
+    const resp = await fetch('/api/v1/tickets/stations');
+    const stations = await resp.json();
+    fromSelect.innerHTML = '';
+    toSelect.innerHTML = '';
+    stations.forEach(s => {
+      const fromOpt = document.createElement('option');
+      fromOpt.value = s.stationId;
+      fromOpt.textContent = `${s.stationName}(${s.stationId})`;
+      fromSelect.appendChild(fromOpt);
+
+      const toOpt = document.createElement('option');
+      toOpt.value = s.stationId;
+      toOpt.textContent = `${s.stationName}(${s.stationId})`;
+      toSelect.appendChild(toOpt);
+    });
+    if (stations.length > 1) {
+      toSelect.selectedIndex = 1;
+    }
+  }
+
+  async function queryTickets() {
+    const departureDate = departureDateInput.value;
+    const fromStationId = fromSelect.value;
+    const toStationId = toSelect.value;
+
+    if (!departureDate || !fromStationId || !toStationId) {
+      statusEl.textContent = '请先选择日期和站点';
+      return;
+    }
+
+    if (Number(fromStationId) >= Number(toStationId)) {
+      statusEl.textContent = '出发站必须早于到达站';
+      return;
+    }
+
+    const url = `/api/v1/tickets/query?departureDate=${departureDate}&fromStationId=${fromStationId}&toStationId=${toStationId}`;
+    const resp = await fetch(url);
+
+    tbody.innerHTML = '';
+    if (resp.status === 204) {
+      statusEl.textContent = '该区间暂无可售车次';
+      return;
+    }
+
+    const list = await resp.json();
+    list.forEach(item => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${item.trainId}</td>
+        <td>${item.fromStationId}</td>
+        <td>${item.toStationId}</td>
+        <td>${item.firstClassStock}</td>
+        <td>${item.secondClassStock}</td>
+        <td>
+          <button data-seat="1">一等座选座</button>
+          <button data-seat="2">二等座选座</button>
+        </td>
+      `;
+
+      tr.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const seatType = btn.dataset.seat;
+          const userId = prompt('请输入用户ID', '10001');
+          if (!userId) return;
+
+          const params = new URLSearchParams({
+            userId,
+            trainId: item.trainId,
+            fromIndex: item.fromIndex,
+            toIndex: item.toIndex,
+            seatType
+          });
+
+          const bookResp = await fetch(`/api/v1/tickets/book?${params.toString()}`, { method: 'POST' });
+          const msg = await bookResp.text();
+          statusEl.textContent = msg;
+          await queryTickets();
+        });
+      });
+
+      tbody.appendChild(tr);
+    });
+
+    statusEl.textContent = `查询完成，共 ${list.length} 条车次`;
+  }
+
+  document.getElementById('queryBtn').addEventListener('click', queryTickets);
+  loadStations();
+</script>
+</body>
+</html>
