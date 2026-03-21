@@ -16,4 +16,15 @@ public interface OrderMapper {
 
     @Select("SELECT * FROM t_order WHERE id = #{orderId}")
     Order selectById(@Param("orderId") Long orderId);
+
+    @Select("""
+        select
+            sell_start as sellStart,
+            sell_end as sellEnd
+        from train_ticket_order
+        where seat_id = #{seatId}
+          and status = 1
+        order by sell_start asc
+        """)
+    List<SeatOrderRangeDTO> selectActiveOrdersBySeatId(@Param("seatId") Long seatId);
 }

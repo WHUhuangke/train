@@ -18,4 +18,6 @@ public interface OrderService {
      * 查询订单：优先查缓存，未命中查数据库并回填缓存
      */
     Order getById(Long orderId);
+    // 新增：查询某座位下所有状态=1的订单区间
+    List<SeatOrderRangeDTO> listActiveSeatOrders(Long seatId);
 }
