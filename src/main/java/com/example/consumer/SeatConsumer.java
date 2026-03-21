@@ -22,6 +22,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+import static com.example.config.RabbitMQConfig.STOCK_ROUTING_KEY;
+
 @Slf4j
 @Component
 public class SeatConsumer {
@@ -147,6 +149,7 @@ public class SeatConsumer {
                 String messageId = UUID.randomUUID().toString();
                 msg.put("success", true);
                 msg.put("messageId", messageId);
+                msg.put("routingKey", STOCK_ROUTING_KEY);
                 msg.put("snapshotBitmap", snapshotBitmap);
 
                 String content = objectMapper.writeValueAsString(msg);

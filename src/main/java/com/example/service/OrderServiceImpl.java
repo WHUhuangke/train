@@ -2,7 +2,6 @@ package com.example.service;
 
 import com.example.entity.Order;
 import com.example.mapper.OrderMapper;
-import com.example.service.OrderService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,6 +11,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 
+/**
+ * 订单服务实现。
+ */
 @Service
 public class OrderServiceImpl implements OrderService {
 
@@ -64,6 +66,22 @@ public class OrderServiceImpl implements OrderService {
             cacheOrder(order);
         }
         return order;
+    }
+
+    @Override
+    public boolean isOrderPending(Long orderId) {
+        Order order = getById(orderId);
+        return order != null && Integer.valueOf(1).equals(order.getStatus());
+    }
+
+    @Override
+    public void markOrderSuccess(Long orderId) {
+        updateStatus(orderId, 2);
+    }
+
+    @Override
+    public void markOrderFailed(Long orderId) {
+        updateStatus(orderId, -1);
     }
 
     private void cacheOrder(Order order) {
