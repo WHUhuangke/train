@@ -1,3 +1,23 @@
+package com.example.service;
+
+import com.example.dto.SeatOrderRangeDTO;
+import com.example.mapper.MessageLogMapper;
+import com.example.mapper.TrainSeatMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+
 @Slf4j
 @Service
 public class SeatTxService {
@@ -24,7 +44,6 @@ public class SeatTxService {
         int sellStart = ((Number) msg.get("sellStart")).intValue();
         int sellEnd = ((Number) msg.get("sellEnd")).intValue();
 
-        // 更推荐改成原子抢占，而不是单纯 isOrderPending
         if (!orderService.isOrderPending(orderId)) {
             log.warn("订单已处理或不存在，跳过: orderId={}", orderId);
             return;
@@ -49,13 +68,10 @@ public class SeatTxService {
                     replacementOnes
             );
 
-            String snapshotBitmap = seatMapper.selectBitmapBySeatId(seatId);
-
             if (updated > 0) {
-                orderService.markOrderSuccess(orderId);
+                String snapshotBitmap = seatMapper.selectBitmapBySeatId(seatId);
 
-                // 可选：缓存操作改到 afterCommit 或异步修复
-                reconcileRedisSeat(trainId, seatType, seatId, snapshotBitmap);
+                orderService.markOrderSuccess(orderId);
 
                 String messageId = UUID.randomUUID().toString();
                 msg.put("success", true);
@@ -65,12 +81,16 @@ public class SeatTxService {
                 String content = objectMapper.writeValueAsString(msg);
                 messageLogMapper.insert(messageId, content, 0, LocalDateTime.now());
 
+                log.info("订票成功，写入本地消息表: orderId={}, messageId={}", orderId, messageId);
+
             } else {
                 orderService.markOrderFailed(orderId);
-                msg.put("success", false);
-                msg.put("snapshotBitmap", snapshotBitmap);
 
-                reconcileRedisSeat(trainId, seatType, seatId, snapshotBitmap);
+                // 仅失败时对账：按该座位的有效订单重放 Redis bitmap
+                reconcileRedisSeatByOrders(trainId, seatType, seatId);
+
+                msg.put("success", false);
+                log.warn("座位位图更新失败，已按订单重放 Redis: orderId={}, seatId={}", orderId, seatId);
             }
         } finally {
             if (lock.isHeldByCurrentThread()) {
@@ -79,12 +99,48 @@ public class SeatTxService {
         }
     }
 
-    private void reconcileRedisSeat(Long trainId, Integer seatType, Long seatId, String dbBitmap) {
+    /**
+     * 按该 seatId 下所有状态=1的订单，重放生成最新 bitmap，并刷入 Redis
+     */
+    private void reconcileRedisSeatByOrders(Long trainId, Integer seatType, Long seatId) {
         String redisSeatKey = "seat:" + trainId + ":" + seatType + ":" + seatId;
-        if (dbBitmap == null || dbBitmap.isEmpty()) {
-            redisTemplate.delete(redisSeatKey);
-        } else {
-            redisTemplate.opsForValue().set(redisSeatKey, dbBitmap);
+
+        try {
+            // 这里你要确保这个长度和数据库位图长度一致
+            String dbBitmap = seatMapper.selectBitmapBySeatId(seatId);
+            if (dbBitmap == null || dbBitmap.isEmpty()) {
+                redisTemplate.delete(redisSeatKey);
+                log.warn("订单重放对账时发现数据库无 bitmap，删除 Redis key={}", redisSeatKey);
+                return;
+            }
+
+            int bitmapLength = dbBitmap.length();
+            char[] rebuilt = new char[bitmapLength];
+            for (int i = 0; i < bitmapLength; i++) {
+                rebuilt[i] = '0';
+            }
+
+            List<SeatOrderRangeDTO> orders = orderService.listActiveSeatOrders(seatId);
+
+            for (SeatOrderRangeDTO order : orders) {
+                int start = order.getSellStart();
+                int end = order.getSellEnd();
+
+                // 这里按你当前代码约定：sellStart / sellEnd 是左闭右开区间
+                for (int i = start; i < end && i < bitmapLength; i++) {
+                    if (i >= 0) {
+                        rebuilt[i] = '1';
+                    }
+                }
+            }
+
+            String rebuiltBitmap = new String(rebuilt);
+            redisTemplate.opsForValue().set(redisSeatKey, rebuiltBitmap);
+
+            log.info("Redis 对账完成(订单重放): key={}, bitmap={}", redisSeatKey, rebuiltBitmap);
+
+        } catch (Exception e) {
+            log.error("Redis 对账失败(订单重放), seatId={}, key={}", seatId, redisSeatKey, e);
         }
     }
 
