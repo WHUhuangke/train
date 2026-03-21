@@ -8,7 +8,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import com.example.service.OrderService;
@@ -47,7 +46,6 @@ public class StockConsumer {
     private ObjectMapper objectMapper;
 
     @RabbitListener(queues = "ticket.stock.queue", ackMode = "MANUAL")
-    @Transactional(rollbackFor = Exception.class)
     public void handleStockUpdate(Map<String, Object> msg, Channel channel, Message message) throws Exception {
         long deliveryTag = message.getMessageProperties().getDeliveryTag();
         String messageId = (String) msg.get("messageId");
@@ -129,7 +127,11 @@ public class StockConsumer {
             log.info("库存更新并写通知outbox成功: stockMessageId={}, notifyMessageId={}", messageId, notifyMessageId);
 
         } catch (Exception e) {
-            log.error("处理失败: {}", messageId, e);
+            log.error("消息消费失败: {}", messageId, e);
+
+            // 这里建议是否 requeue 取决于你的重试策略
+            // true: 重新入队，可能重复投递
+            // false: 丢给死信队列（前提是已配置 DLX）
             channel.basicNack(deliveryTag, false, false);
         }
     }

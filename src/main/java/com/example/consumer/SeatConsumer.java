@@ -28,86 +28,13 @@ import static com.example.config.RabbitMQConfig.STOCK_ROUTING_KEY;
 @Component
 public class SeatConsumer {
 
-    // 座位数据访问层
     @Autowired
-    private TrainSeatMapper seatMapper;
+    private SeatTxService seatTxService;
 
-    // 订单服务层（用于幂等校验、状态更新、缓存同步）
-    @Autowired
-    private OrderService orderService;
-
-    // RabbitMQ消息队列模板
-    @Autowired
-    private RabbitTemplate rabbitTemplate;
-
-    // 消息日志数据访问层
-    @Autowired
-    private MessageLogMapper messageLogMapper;
-
-    // JSON序列化工具
-    @Autowired
-    private ObjectMapper objectMapper;
-
-    // Redis模板（用于座位bitmap对账）
-    @Autowired
-    private StringRedisTemplate redisTemplate;
-
-    // Redisson客户端（用于分布式锁）
-    @Autowired
-    private RedissonClient redissonClient;
-
-    /**
-     * 车票预订消息消费者
-     * 监听队列：ticket.book.queue
-     * 功能：处理座位实际占用、订单状态更新、消息可靠性投递
-     *
-     * 并发控制说明：
-     * 1. 先检查订单状态，只有 status=1 才允许继续处理
-     * 2. 对 seatId 加分布式锁，锁范围覆盖 查seat + 更新seat + 更新订单 + redis对账
-     * 3. tryLock失败则 basicNack(..., true)，让MQ稍后重投
-     *
-     * @param msg 消息体，包含订单详细信息
-     * @param channel RabbitMQ通道
-     * @param message RabbitMQ原始消息
-     * @throws Exception 处理异常
-     */
-    @RabbitListener(queues = "ticket.book.queue")
-    @Transactional(rollbackFor = Exception.class)
+    @RabbitListener(queues = "ticket.book.queue", ackMode = "MANUAL")
     public void handleBooking(Map<String, Object> msg, Channel channel, Message message) throws Exception {
         long deliveryTag = message.getMessageProperties().getDeliveryTag();
-        log.info("收到订票消息: {}", msg);
-
-        RLock lock = null;
-        boolean locked = false;
-
-        try {
-            Long orderId = Long.valueOf(msg.get("orderId").toString());
-            Long trainId = Long.valueOf(msg.get("trainId").toString());
-            Long seatId = Long.valueOf(msg.get("seatId").toString());
-            Integer seatType = Integer.valueOf(msg.get("seatType").toString());
-            int sellStart = ((Number) msg.get("sellStart")).intValue();
-            int sellEnd = ((Number) msg.get("sellEnd")).intValue();
-
-            // 1. 幂等校验：只有待处理订单(status=1)才继续处理
-            if (!orderService.isOrderPending(orderId)) {
-                log.warn("订单已处理或不存在，跳过重复消费, orderId={}", orderId);
-                channel.basicAck(deliveryTag, false);
-                return;
-            }
-
-            // 2. 获取 seat 级别分布式锁
-            String lockKey = "lock:seat:" + seatId;
-            lock = redissonClient.getLock(lockKey);
-
-            // 最多等待100ms获取锁，锁租约10秒，防止死锁
-            locked = lock.tryLock(100, 10, TimeUnit.MILLISECONDS);
-
-            // 获取锁失败，消息重新入队等待重试
-            if (!locked) {
-                log.warn("获取分布式锁失败，消息稍后重试, seatId={}, orderId={}", seatId, orderId);
-                channel.basicNack(deliveryTag, false, true);
-                return;
-            }
+        Object orderId = msg.get("orderId");
 
             int length = sellEnd - sellStart;
             String requiredZeros = fillString('0', length);
@@ -202,31 +129,14 @@ public class SeatConsumer {
     private void reconcileRedisSeat(Long trainId, Integer seatType, Long seatId, String dbBitmap) {
         String redisSeatKey = "seat:" + trainId + ":" + seatType + ":" + seatId;
         try {
-            if (dbBitmap == null || dbBitmap.isEmpty()) {
-                redisTemplate.delete(redisSeatKey);
-                log.warn("Redis对账: 删除异常座位缓存, key={}", redisSeatKey);
-            } else {
-                redisTemplate.opsForValue().set(redisSeatKey, dbBitmap);
-                log.info("Redis对账成功, key={}, bitmap={}", redisSeatKey, dbBitmap);
-            }
+            seatTxService.handleBookingTx(msg);
+            channel.basicAck(deliveryTag, false);
+            log.info("订票消息消费成功: orderId={}", orderId);
         } catch (Exception e) {
-            log.error("Redis对账失败, key={}", redisSeatKey, e);
-        }
-    }
+            log.error("订票消息消费失败: orderId={}", orderId, e);
 
-    /**
-     * 生成指定长度的重复字符字符串
-     * 用于构建位图更新所需的匹配和替换字符串
-     *
-     * @param c 重复的字符
-     * @param len 重复次数
-     * @return 重复字符组成的字符串
-     */
-    private String fillString(char c, int len) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < len; i++) {
-            sb.append(c);
+            // 建议结合死信队列策略决定是否 requeue
+            channel.basicNack(deliveryTag, false, false);
         }
-        return sb.toString();
     }
 }
