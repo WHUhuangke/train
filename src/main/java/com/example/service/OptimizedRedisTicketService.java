@@ -270,7 +270,7 @@ public class OptimizedRedisTicketService {
         String seatId = tryAllocateSeat(request.trainId, request.seatType, request.sellStart, request.sellEnd);
         if (seatId == null) {
             rollbackPreDeductedStock(affectedStockKeys);
-            // reconcileStockCache(affectedStockKeys);
+            reconcileStockCache(affectedStockKeys);
             return null;
         }
 
@@ -290,12 +290,13 @@ public class OptimizedRedisTicketService {
         } catch (Exception e) {
             rollbackSeat(request.trainId, request.seatType, seatId, request.sellStart, request.sellEnd);
             rollbackPreDeductedStock(affectedStockKeys);
-            // reconcileStockCache(affectedStockKeys);
+            reconcileStockCache(affectedStockKeys);
             throw new RuntimeException("创建订单失败，已回滚座位与余票缓存", e);
         }
 
         Map<String, Object> msg = new HashMap<>();
         msg.put("orderId", orderId);
+        msg.put("userId", request.userId);
         msg.put("trainId", request.trainId);
         msg.put("seatId", Long.parseLong(seatId));
         msg.put("sellStart", request.sellStart);

@@ -6,6 +6,7 @@ import com.example.mapper.TrainStationMapper;
 import com.example.service.OptimizedRedisTicketService;
 import com.example.service.RestTicketService;
 import com.example.service.TrainTicketManager;
+import com.example.service.OrderNotifySseService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.util.List;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * 票务 HTTP 控制器。
@@ -39,6 +41,10 @@ public class TicketController {
     /** 车站查询 Mapper。 */
     @Autowired
     private TrainStationMapper trainStationMapper;
+
+    /** SSE 通知服务。 */
+    @Autowired
+    private OrderNotifySseService orderNotifySseService;
 
     /**
      * 查询指定日期与区间的余票。
@@ -137,6 +143,15 @@ public class TicketController {
             log.error("批量初始化失败", e);
             return ResponseEntity.internalServerError().body("批量初始化失败：" + e.getMessage());
         }
+    }
+
+
+    /**
+     * SSE 订阅接口：前端通过 EventSource 建立长连接接收订单完成通知。
+     */
+    @GetMapping("/subscribe")
+    public SseEmitter subscribe(@RequestParam Long userId) {
+        return orderNotifySseService.subscribe(userId);
     }
 
     /**
