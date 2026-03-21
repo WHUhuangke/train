@@ -27,4 +27,20 @@ public interface OrderMapper {
         order by sell_start asc
         """)
     List<SeatOrderRangeDTO> selectActiveOrdersBySeatId(@Param("seatId") Long seatId);
+
+
+    @Select("""
+        select
+            sell_start as sellStart,
+            sell_end as sellEnd
+        from train_ticket_order
+        where train_id = #{trainId}
+          and seat_type = #{seatType}
+          and status = 2
+        order by sell_start asc
+        """)
+    List<StockOrderRangeDTO> selectSuccessOrdersForStockReplay(
+            @Param("trainId") Long trainId,
+            @Param("seatType") Integer seatType
+    );
 }
