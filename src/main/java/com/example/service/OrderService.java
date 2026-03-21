@@ -22,6 +22,11 @@ public interface OrderService {
      */
     Order getById(Long orderId);
 
+    // 新增：查询某座位下所有状态=1的订单区间
+    List<SeatOrderRangeDTO> listActiveSeatOrders(Long seatId);
+
+    List<StockOrderRangeDTO> listSuccessOrdersForStockReplay(Long trainId, Integer seatType);
+
     /**
      * 订单是否处于待处理状态（status=1）。
      */

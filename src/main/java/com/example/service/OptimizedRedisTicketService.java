@@ -270,7 +270,7 @@ public class OptimizedRedisTicketService {
         String seatId = tryAllocateSeat(request.trainId, request.seatType, request.sellStart, request.sellEnd);
         if (seatId == null) {
             rollbackPreDeductedStock(affectedStockKeys);
-            reconcileStockCache(affectedStockKeys);
+            // reconcileStockCache(affectedStockKeys);
             return null;
         }
 
@@ -290,7 +290,7 @@ public class OptimizedRedisTicketService {
         } catch (Exception e) {
             rollbackSeat(request.trainId, request.seatType, seatId, request.sellStart, request.sellEnd);
             rollbackPreDeductedStock(affectedStockKeys);
-            reconcileStockCache(affectedStockKeys);
+            // reconcileStockCache(affectedStockKeys);
             throw new RuntimeException("创建订单失败，已回滚座位与余票缓存", e);
         }
 
@@ -338,28 +338,28 @@ public class OptimizedRedisTicketService {
     /**
      * 余票缓存对账：从 DB 读取正确值并覆盖 Redis。
      */
-    private void reconcileStockCache(List<String> stockKeys) {
-        if (stockKeys == null || stockKeys.isEmpty()) {
-            return;
-        }
-        for (String stockKey : stockKeys) {
-            StockKeyParts parts = parseStockKey(stockKey);
-            if (parts == null) {
-                continue;
-            }
-            Integer dbStock = stockMapper.selectStockByUnique(
-                    parts.trainId,
-                    parts.seatType,
-                    parts.fromStationId,
-                    parts.toStationId
-            );
-            if (dbStock == null) {
-                redisTemplate.delete(stockKey);
-            } else {
-                redisTemplate.opsForValue().set(stockKey, String.valueOf(dbStock));
-            }
-        }
-    }
+    // private void reconcileStockCache(List<String> stockKeys) {
+    //     if (stockKeys == null || stockKeys.isEmpty()) {
+    //         return;
+    //     }
+    //     for (String stockKey : stockKeys) {
+    //         StockKeyParts parts = parseStockKey(stockKey);
+    //         if (parts == null) {
+    //             continue;
+    //         }
+    //         Integer dbStock = stockMapper.selectStockByUnique(
+    //                 parts.trainId,
+    //                 parts.seatType,
+    //                 parts.fromStationId,
+    //                 parts.toStationId
+    //         );
+    //         if (dbStock == null) {
+    //             redisTemplate.delete(stockKey);
+    //         } else {
+    //             redisTemplate.opsForValue().set(stockKey, String.valueOf(dbStock));
+    //         }
+    //     }
+    // }
 
     /**
      * 查询与当前购票区间有交集的余票缓存 key。

@@ -61,6 +61,7 @@ public class SeatTxService {
             String replacementOnes = fillString('1', length);
 
             int updated = seatMapper.updateSeatBitmapAtomic(
+                
                     seatId,
                     sellStart + 1,
                     length,
