@@ -1,0 +1,56 @@
+server:
+  port: 8090
+
+spring:
+  application:
+    name: train-ticket-gateway
+  redis:
+    host: 127.0.0.1
+    port: 16379
+    timeout: 3000ms
+  cloud:
+    gateway:
+      httpclient:
+        connect-timeout: 3000
+        response-timeout: 5s
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins:
+              - "*"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders:
+              - "*"
+            exposedHeaders:
+              - X-Trace-Id
+      metrics:
+        enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,gateway
+
+gateway:
+  auth:
+    skip-paths: /actuator,/gateway/auth,/gateway/ticket/query,/fallback
+  jwt:
+    secret: ${GATEWAY_JWT_SECRET:change-this-to-a-very-long-random-secret-key-123456}
+    issuer: train-ticket-gateway
+    expire-minutes: 30
+    refresh-expire-minutes: 1440
+  sso:
+    session-prefix: gateway:sso:user:
+
+logging:
+  level:
+    root: INFO
+    org.springframework.cloud.gateway: INFO
