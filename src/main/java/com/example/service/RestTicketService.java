@@ -8,6 +8,9 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -15,6 +18,15 @@ public class RestTicketService {
 
     // Redis缓存过期时间（30分钟）
     private static final long STOCK_CACHE_TTL_MINUTES = 30L;
+    // 空库存标记缓存时间（2分钟，降低缓存穿透压力）
+    private static final long EMPTY_STOCK_CACHE_TTL_MINUTES = 2L;
+    // 空库存标记值
+    private static final String EMPTY_STOCK_MARKER = "-1";
+
+    /**
+     * 请求合并 Future：同一库存 key 的并发缓存未命中只允许一个线程回源，其余线程复用结果。
+     */
+    private final ConcurrentHashMap<String, CompletableFuture<Integer>> stockLoadFutures = new ConcurrentHashMap<>();
 
     @Autowired
     private TrainTicketStockMapper stockMapper; // 数据库访问层
@@ -94,22 +106,48 @@ public class RestTicketService {
         String cached = redisTemplate.opsForValue().get(key);
 
         if (cached != null) {
-            // 命中缓存，直接返回
-            return Integer.parseInt(cached);
+            // 命中缓存，直接返回；空标记统一映射为 0，避免击穿 DB
+            return EMPTY_STOCK_MARKER.equals(cached) ? 0 : Integer.parseInt(cached);
         }
 
-        // 缓存未命中，从数据库字段取库存（row里已经查出来了）
-        int dbStock = Optional.ofNullable(row.getStock()).orElse(0);
+        // 使用 Future 模式进行请求合并：并发 miss 时仅一个线程写缓存
+        CompletableFuture<Integer> newFuture = new CompletableFuture<>();
+        CompletableFuture<Integer> loadingFuture = stockLoadFutures.putIfAbsent(key, newFuture);
+        if (loadingFuture == null) {
+            try {
+                int dbStock = Optional.ofNullable(row.getStock()).orElse(0);
+                if (dbStock <= 0) {
+                    redisTemplate.opsForValue().set(
+                            key,
+                            EMPTY_STOCK_MARKER,
+                            EMPTY_STOCK_CACHE_TTL_MINUTES,
+                            TimeUnit.MINUTES
+                    );
+                } else {
+                    redisTemplate.opsForValue().set(
+                            key,
+                            String.valueOf(dbStock),
+                            STOCK_CACHE_TTL_MINUTES,
+                            TimeUnit.MINUTES
+                    );
+                }
+                newFuture.complete(dbStock);
+                return dbStock;
+            } catch (Exception ex) {
+                newFuture.completeExceptionally(ex);
+                throw ex;
+            } finally {
+                stockLoadFutures.remove(key, newFuture);
+            }
+        }
 
-        // 写入Redis缓存（带TTL）
-        redisTemplate.opsForValue().set(
-                key,
-                String.valueOf(dbStock),
-                STOCK_CACHE_TTL_MINUTES,
-                TimeUnit.MINUTES
-        );
-
-        return dbStock;
+        try {
+            return loadingFuture.get(300, TimeUnit.MILLISECONDS);
+        } catch (ExecutionException ex) {
+            throw new RuntimeException("余票请求合并等待失败", ex.getCause());
+        } catch (Exception ex) {
+            throw new RuntimeException("余票请求合并等待超时", ex);
+        }
     }
 
     /**

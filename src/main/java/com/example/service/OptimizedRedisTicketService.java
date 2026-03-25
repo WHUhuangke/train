@@ -64,6 +64,10 @@ public class OptimizedRedisTicketService {
     @Autowired
     private TrainTicketStockMapper stockMapper;
 
+    /** 业务规则校验器（服务层兜底，防止绕过 Controller）。 */
+    @Autowired
+    private BusinessRuleValidator businessRuleValidator;
+
     @Value("${train.rate-limit.capacity:100}")
     private int rateLimitCapacity;
 
@@ -182,6 +186,7 @@ public class OptimizedRedisTicketService {
      * 抢票入口：先排队，再按优先级（长区间优先）串行处理。
      */
     public String bookTicket(Long userId, Long trainId, int sellStart, int sellEnd, Integer seatType) {
+        businessRuleValidator.validateBookRequest(userId, trainId, sellStart, sellEnd, seatType);
         ensureSeatCacheLoaded(trainId, seatType);
 
         BookingRequest request = new BookingRequest(
