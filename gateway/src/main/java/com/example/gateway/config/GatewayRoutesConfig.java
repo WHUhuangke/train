@@ -71,5 +71,5 @@ public class GatewayRoutesConfig {
     @Bean
     public org.springframework.cloud.gateway.filter.ratelimit.RedisRateLimiter redisRateLimiter() {
         return new org.springframework.cloud.gateway.filter.ratelimit.RedisRateLimiter(20, 40, 1);
-    }
+    }   
 }
