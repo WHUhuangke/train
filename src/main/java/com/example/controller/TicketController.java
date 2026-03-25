@@ -7,6 +7,7 @@ import com.example.service.OptimizedRedisTicketService;
 import com.example.service.RestTicketService;
 import com.example.service.TrainTicketManager;
 import com.example.service.OrderNotifySseService;
+import com.example.service.BusinessRuleValidator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -45,6 +46,10 @@ public class TicketController {
     /** SSE 通知服务。 */
     @Autowired
     private OrderNotifySseService orderNotifySseService;
+
+    /** 业务规则校验器。 */
+    @Autowired
+    private BusinessRuleValidator businessRuleValidator;
 
     /**
      * 查询指定日期与区间的余票。
@@ -93,6 +98,11 @@ public class TicketController {
             @RequestParam int fromIndex,
             @RequestParam int toIndex,
             @RequestParam Integer seatType) {
+        try {
+            businessRuleValidator.validateBookRequest(userId, trainId, fromIndex, toIndex, seatType);
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body("请求参数非法：" + ex.getMessage());
+        }
 
         String success = t.bookTicket(userId, trainId, fromIndex, toIndex, seatType);
 
